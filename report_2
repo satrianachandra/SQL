@@ -1,0 +1,84 @@
+create table non_churn_experience_bh_all_exclude_noquota_nov as
+--with notchurn as (
+--select distinct msisdn
+--from sandbox.nonchurn_kabupaten
+--),
+with source as (
+		select 
+				a.year,
+				a.month,
+				a.day,
+				a.hour,
+				case when (a.rating<=2 and (a.external_packet_loss>=20 or b.msisdn is not null)) then null
+					 else a.msisdn 
+					 end as msisdn,
+			    a.gci,
+			    a.internal_latency_ms,
+			    a.external_latency_ms,
+			    a.latency_ms,
+			    a.internal_packet_loss,
+			    a.external_packet_loss,
+			    a.packet_loss,
+			    a.session_setup,
+			    a.service_access,
+			    a.rating
+		from location_pattern a
+		left outer join sandbox.non_churn_mytri b on b.msisdn = a.msisdn and b.year=a.year and b.month=a.month and b.day=a.day
+		where a.year=2018 and a.month=11 and a.hour=20
+		--and a.msisdn in (select msisdn from notchurn)
+		
+)
+
+
+select 
+    msisdn,
+    case when demerit_packet_loss =0 then 5
+         when demerit_packet_loss =1 then 4
+         when demerit_packet_loss =2 then 3
+         when demerit_packet_loss =3 then 2
+         when demerit_packet_loss >=4 then 1 end as rating_packet_loss,
+    case when demerit_latency_ms =0 then 5
+         when demerit_latency_ms =1 then 4
+         when demerit_latency_ms =2 then 3
+         when demerit_latency_ms =3 then 2
+         when demerit_latency_ms >=4 then 1 end as rating_latency_ms,
+    case when demerit_service_access =0 then 5
+         when demerit_service_access =1 then 4
+         when demerit_service_access =2 then 3
+         when demerit_service_access =3 then 2
+         when demerit_service_access >=4 then 1 end as rating_service_access, 
+    case when demerit_session_setup =0 then 5
+         when demerit_session_setup =1 then 4
+         when demerit_session_setup =2 then 3
+         when demerit_session_setup =3 then 2
+         when demerit_session_setup >=4 then 1 end as rating_session_setup,
+    internal_latency_ms,
+    external_latency_ms,
+    internal_packet_loss,
+    external_packet_loss
+from(
+select 
+    msisdn,
+    cast(IF(packet_loss=0,0,IF(packet_loss<=3,1,IF(packet_loss<=5,2,IF(packet_loss<=10,3,IF(packet_loss<=20,4,IF(packet_loss<=30,5,6)))))) as tinyint) demerit_packet_loss,
+    IF(latency_ms<=150,0,IF(latency_ms<=300,1,IF(latency_ms<=600,2,IF(latency_ms<=1000,3,IF(latency_ms<=1200,4,5))))) demerit_latency_ms,
+    IF(service_access<45,6,IF(service_access<55,5,IF(service_access<65,4,IF(service_access<75,3,IF(service_access<85,2,IF(service_access<95,1,0)))))) demerit_service_access,
+    IF(session_setup<30,5,IF(session_setup<45,4,IF(session_setup<60,3,IF(session_setup<85,2,IF(session_setup<99,1,0))))) demerit_session_setup,
+    internal_latency_ms,
+    external_latency_ms,
+    internal_packet_loss,
+    external_packet_loss
+
+from(
+select msisdn,
+    avg(case when (is_NaN(a.internal_latency_ms)=false) and (is_inf(a.internal_latency_ms)=false) then a.internal_latency_ms else null end) as internal_latency_ms,
+    avg(case when (is_NaN(a.external_latency_ms)=false) and (is_inf(a.external_latency_ms)=false) then a.external_latency_ms else null end) as external_latency_ms,
+    avg(case when (is_NaN(a.latency_ms)=false) and (is_inf(a.latency_ms)=false) then a.latency_ms else null end) as latency_ms,
+    avg(case when (is_NaN(a.internal_packet_loss)=false) and (is_inf(a.internal_packet_loss)=false) then a.internal_packet_loss else null end) as internal_packet_loss,
+    avg(case when (is_NaN(a.external_packet_loss)=false) and (is_inf(a.external_packet_loss)=false) then a.external_packet_loss else null end) as external_packet_loss,
+    avg(case when is_NaN(a.packet_loss)=false then a.packet_loss else null end) as packet_loss,avg(case when (is_NaN(a.session_setup)=false) and (is_inf(a.session_setup)=false) then a.session_setup else null end) as session_setup,
+    avg(case when (is_NaN(a.service_access)=false) and (is_inf(a.service_access)=false) then a.service_access else null end) as service_access
+from source a
+group by 1
+)stg
+)stg_2
+order by 1
