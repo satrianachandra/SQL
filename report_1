@@ -1,0 +1,118 @@
+...
+,stg_2 as (
+    select a.external_latency_ms,
+            a.msisdn,
+            a.flows,
+            a.activity_sec,
+            a.vol_in,
+            a.vol_out,
+            a.internal_packet_loss,
+            a.external_packet_loss,
+            a.packet_loss,
+            a.internal_latency_ms,
+            a.gci,
+            b.gladiator_branch,
+            b.network,
+            b.branch_priority,
+            a.latency_ms,
+            a.session_setup,
+            a.service_access,
+            a.demerit,
+            a.rating,
+            a.year,
+            a.month,
+            a.day,
+            a.hour
+    from hutch_dw.location_pattern a
+    left outer join hutch_dw.fact_sdb b on a.gci = b.gci and b.week=%s
+    where a.year=%s and a.month=%s and a.day=%s and hour=20
+    and b.network = '3gne'
+    and a.msisdn not in (select msisdn from mytri_users)
+    and a.msisdn not in (select msisdn from high_pl_subs)
+),
+...
+rating_per_cell as (
+    select
+        hour,
+        gci,
+        internal_packet_loss,
+    external_packet_loss,
+    packet_loss,
+    internal_latency_ms,
+    external_latency_ms,
+    latency_ms,
+    session_setup,
+    service_access,
+    demerit,
+    if( (is_nan(internal_packet_loss) or is_nan(internal_latency_ms) or is_nan(session_setup) or is_nan(service_access) or is_inf(internal_packet_loss) or is_inf(internal_latency_ms) or is_inf(session_setup) or is_inf(service_access) ),1,IF(demerit=0,5,IF(demerit<4,4,IF(demerit<7,3,IF(demerit<10,2,1))))) rating
+  from( 
+        select
+            hour,
+            gci,
+            internal_packet_loss,
+        external_packet_loss,
+        packet_loss,
+        internal_latency_ms,
+        external_latency_ms,
+        latency_ms,
+        session_setup,
+        service_access,
+        cast(IF(packet_loss=0,0,IF(packet_loss<=3,1,IF(packet_loss<=5,2,IF(packet_loss<=10,3,IF(packet_loss<=20,4,IF(packet_loss<=30,5,6))))))+IF(latency_ms<=150,0,IF(latency_ms<=300,1,IF(latency_ms<=600,2,IF(latency_ms<=1000,3,IF(latency_ms<=1200,4,5)))))+IF(service_access<45,6,IF(service_access<55,5,IF(service_access<65,4,IF(service_access<75,3,IF(service_access<85,2,IF(service_access<95,1,0))))))+IF(session_setup<30,5,IF(session_setup<45,4,IF(session_setup<60,3,IF(session_setup<85,2,IF(session_setup<99,1,0))))) as tinyint) as demerit
+        from (
+            select
+                hour,
+                gci,
+                avg(case when (is_NaN(a.internal_latency_ms)=false) and (is_inf(a.internal_latency_ms)=false) then a.internal_latency_ms else null end) as internal_latency_ms,
+                avg(case when (is_NaN(a.external_latency_ms)=false) and (is_inf(a.external_latency_ms)=false) then a.external_latency_ms else null end) as external_latency_ms,
+                avg(case when (is_NaN(a.latency_ms)=false) and (is_inf(a.latency_ms)=false) then a.latency_ms else null end) as latency_ms,
+                avg(case when (is_NaN(a.internal_packet_loss)=false) and (is_inf(a.internal_packet_loss)=false) then a.internal_packet_loss else null end) as internal_packet_loss,
+                avg(case when (is_NaN(a.external_packet_loss)=false) and (is_inf(a.external_packet_loss)=false) then a.external_packet_loss else null end) as external_packet_loss,
+                avg(case when is_NaN(a.packet_loss)=false then a.packet_loss else null end) as packet_loss,avg(case when (is_NaN(a.session_setup)=false) and (is_inf(a.session_setup)=false) then a.session_setup else null end) as session_setup,
+                avg(case when (is_NaN(a.service_access)=false) and (is_inf(a.service_access)=false) then a.service_access else null end) as service_access
+            from stg_2 a
+            group by 1,2
+        )temp
+    )temp_2
+),
+...
+select  a.hour,
+            a.gladiator_branch,
+            a.branch_priority,
+            a.rating,
+            a.volume,
+            a.subs,
+            coalesce(c.cells,0) bad_cells,
+            coalesce(d.cells,0) poor_cells,
+            coalesce(e.cells,0) fair_cells,
+            coalesce(f.cells,0) good_cells,
+            coalesce(g.cells,0) excellent_cells,
+            coalesce(h.subs,0) bad_subs,
+            coalesce(i.subs,0) poor_subs,
+            coalesce(j.subs,0) fair_subs,
+            coalesce(k.subs,0) good_subs,
+            coalesce(l.subs,0) excellent_subs,
+            internal_packet_loss,
+        external_packet_loss,
+        packet_loss,
+        internal_latency_ms,
+        external_latency_ms,
+        latency_ms,
+        session_setup,
+        service_access,
+        m.subs excluded_subs,
+  ....
+  
+ cur.execute(query)
+df = as_pandas(cur)
+file_name = report_3G_%s%s%s.csv' % (year,month,day)
+df.to_csv(file_name, sep=',', index=False,header=False,encoding='utf-8',mode='a')
+
+
+
+srv = pysftp.Connection(host="x.x.x.x", username="xxx",
+password="xxxxxx")
+
+with srv.cd('xxx/xxxxxxx'): #chdir to public
+    srv.put(file_name) #upload file to nodejs/
+
+    
